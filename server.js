@@ -1,5 +1,5 @@
 // Metric Pulse collector — runs 24/7 on Render. Polls Metric's public API, logs history to Firebase Firestore.
-// Env: FIREBASE_SERVICE_ACCOUNT (service-account JSON) · INTERVAL (poll secs, default 30) · RETAIN_DAYS (default 90)
+// Env: FIREBASE_SERVICE_ACCOUNT (service-account JSON) · INTERVAL (poll secs, default 30) · RETAIN_DAYS (optional; unset = keep history forever)
 //      SELF_PING=0 to disable the keep-awake self request · METRIC_API_BASE (testing only)
 import http from 'node:http';
 import admin from 'firebase-admin';
@@ -91,8 +91,8 @@ async function tick() {
   for (let i = 0; i < ops.length; i += 400) { const batch = db.batch(); ops.slice(i, i + 400).forEach(([r, d]) => batch.set(r, d)); await batch.commit() }
   state = { ...next, p: next.p };
 
-  if (writeHist) { // retention
-    const old = await db.collection('snapshots').where('ts', '<', b - 86400 * (+process.env.RETAIN_DAYS || 90)).limit(300).get();
+  if (writeHist && +process.env.RETAIN_DAYS > 0) { // optional retention (off by default)
+    const old = await db.collection('snapshots').where('ts', '<', b - 86400 * +process.env.RETAIN_DAYS).limit(300).get();
     if (!old.empty) { const d = db.batch(); old.docs.forEach(x => d.delete(x.ref)); await d.commit() }
   }
   return { pools: snap.n, events: events.length, wroteSnapshot: writeHist, bucket: b };
